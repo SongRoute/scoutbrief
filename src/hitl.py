@@ -24,6 +24,7 @@ import pathlib
 from langgraph.types import interrupt
 
 import config
+from src import guards
 
 APPROVAL_SECRET_ENV = "SCOUTBRIEF_APPROVAL_SECRET"
 
@@ -122,11 +123,14 @@ def hitl_gate(state) -> dict:
 
 def render_deploy(state) -> dict:
     """deploy 게이트 + 배포. 미승인이면 PermissionError (CONTRACT §6 LLM08 문면).
-    S7: guard_output 멱등 이중방어가 이 함수 내부에 추가된다 (CONTRACT §6) — 자리 예약."""
+    S7: guard_output 멱등 이중방어 (CONTRACT §6:170 '제거 금지') — 정상 경로에서는
+    label_pass가 이미 마스킹한 draft라 no-op이고, 따라서 승인 해시
+    (approve-what-you-see)도 깨지지 않는다. label_pass를 우회한 오염 draft가
+    직접 들어와도 배포본은 마스킹된다."""
     if not state["approved"]:
         raise PermissionError(
             "LLM08: 미승인 배포 차단 — 유효한 승인 토큰 없이 render_deploy에 진입했습니다")
-    report_md = deploy_markdown(state["tool_results"], state["draft"])
+    report_md = guards.guard_output(deploy_markdown(state["tool_results"], state["draft"]))
     OUT_DIR.mkdir(exist_ok=True)
     (OUT_DIR / OUT_FILENAME).write_text(report_md, encoding="utf-8")
     return {"final_report": report_md}

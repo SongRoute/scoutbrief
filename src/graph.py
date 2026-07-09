@@ -1,15 +1,17 @@
-# src/graph.py — S4 골격 + S5 재생성 루프 + S6 HITL 배선 (A레인 배선, SESSIONS.md S4~S6)
+# src/graph.py — S4 골격 + S5 재생성 루프 + S6 HITL 배선 + S7 가드레일 (A레인)
 # parse_request → fetch_data → synthesize → verify → route_after_verify
 #   → regenerate(→synthesize) | escalate | done.
 # 라우팅·escalate·피드백 빌더는 B레인 소유(src/nodes_b.py) — 여기서는 import만.
-# S6 (with_hitl=True): done/escalate → hitl_gate → render_deploy — 노드는
-# B레인 소유(src/hitl.py), 여기서는 배선만. 가드레일(S7)은 이 파일에 아직 없다.
+# S6 (with_hitl=True): done/escalate → label_pass → hitl_gate → render_deploy —
+# hitl 노드는 B레인 소유(src/hitl.py), 여기서는 배선만.
+# S7: parse_request에 guards.guard_input(LLM01), label_pass 노드 신설(LLM06 —
+# 분석관이 마스킹된 최종본을 승인하도록 hitl_gate 앞에 배치, CONTRACT §6:169).
 #
 # B 모듈은 시그니처만 배선 (판정 로직·층1 패턴 수정 금지):
 #   verifier.verify_report(draft: dict, tool_results: dict) -> verify_report
 #   labels.small_sample_banner(pa_total: int) -> str
-# label_pass 노드는 S5 범위 — 단, §7 matchup 배너는 결정론 라벨(규칙 4)이라
-# synthesize의 후처리 코드로 부착한다. vsL_low_n은 Tool 4 필드를 소비, 재계산 금지.
+# §7 matchup 배너는 결정론 라벨(규칙 4)이라 synthesize의 후처리 코드로 부착한다.
+# vsL_low_n은 Tool 4 필드를 소비, 재계산 금지.
 #
 # R2: tool_results 값의 f-string 개별 삽입 금지 — 프롬프트에는 툴 결과 전체의
 #     json.dumps 직렬화 블록으로만 전달한다.
@@ -24,7 +26,7 @@ import config
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 
-from src import hitl, labels, nodes_b, verifier
+from src import guards, hitl, labels, nodes_b, verifier
 from src.llm import chat
 from src.mcp_server import (get_batter_vs_pitcher, get_bullpen_threats,
                             get_pitch_arsenal, get_pitcher_recent)
@@ -155,10 +157,13 @@ assert set(SECTION_SPECS) == set(config.SECTION_KEYS), "R3: 섹션 키는 SECTIO
 
 
 def parse_request(state: BriefState) -> dict:
-    """규칙 기반 파싱 — MVP: config 상수 적재. LLM01 입력 필터는 S7."""
+    """규칙 기반 파싱 — MVP: config 상수 적재.
+    S7: guards.guard_input(LLM01) — 인젝션이면 ValueError, 통과 시 원문이
+    상태에 남는다 (§2:43 'LLM01 필터 통과 원문')."""
     if not state["request"].strip():
         raise ValueError("빈 request")
-    return {"game_ctx": {
+    request = guards.guard_input(state["request"])
+    return {"request": request, "game_ctx": {
         "game_date": config.GAME_DATE_US,
         "team_us": config.TEAM_US,
         "team_opp": config.TEAM_OPP,
@@ -221,6 +226,16 @@ def synthesize(state: BriefState) -> dict:
     return {"draft": draft, "retry_counts": retry_counts}
 
 
+def label_pass(state: BriefState) -> dict:
+    """S7 (A레인): draft 전 섹션에 guards.guard_output(LLM06) 적용 — 분석관은
+    마스킹된 최종본을 승인한다 (CONTRACT §6:169, hitl_gate보다 앞).
+    R1 (CLAUDE.md:18): 검증 리포트(감사 로그)를 읽지 않는다 — 이 노드는 실패
+    신호조차 필요 없다 (escalate 플레이스홀더도 여느 문장처럼 통과할 뿐).
+    test_guards의 정적 검사가 이 함수 소스에 해당 상태 키가 없음을 보증한다."""
+    return {"draft": {
+        k: guards.guard_output(state["draft"][k]) for k in config.SECTION_KEYS}}
+
+
 def verify(state: BriefState) -> dict:
     """verifier.verify_report 배선. verify_report는 감사 로그 —
     라우팅(escalated_sections 채우기)은 S5의 route_after_verify 소유."""
@@ -244,7 +259,8 @@ def build_graph(poison_node=None, with_hitl=False):
     poison_node: 데모 계측 훅(run_demo --poison 소유) — synthesize와 verify 사이에
     끼워 넣는 상태 함수. 운영 경로는 None.
 
-    with_hitl (S6): done/escalate가 END 대신 hitl_gate → render_deploy로 이어진다.
+    with_hitl (S6+S7): done/escalate가 END 대신 label_pass → hitl_gate →
+    render_deploy로 이어진다.
     hitl_gate의 interrupt() 때문에 체크포인터(MemorySaver)로 컴파일 —
     재개는 Command(resume=토큰). False(기본)면 S4/S5 경로 그대로 (--linear/--poison)."""
     g = StateGraph(BriefState)
@@ -272,13 +288,18 @@ def build_graph(poison_node=None, with_hitl=False):
     # S6: 완성 경로(done)와 escalate 잔존 경로 모두 분석관 관문을 거친다 —
     # escalated_sections는 페이로드로 노출되고 (R1: verify_report는 미열람),
     # 승인 여부 판단은 사람 몫.
+    # S7: 두 경로 모두 label_pass(LLM06 마스킹)를 먼저 통과 — 분석관이 보는
+    # 배포 후보가 곧 마스킹된 최종본이다 (§6:169). with_hitl=False 경로에는
+    # 삽입하지 않는다 (--linear/--poison 회귀 방지).
+    g.add_node("label_pass", label_pass)
     g.add_node("hitl_gate", hitl.hitl_gate)
     g.add_node("render_deploy", hitl.render_deploy)
     g.add_conditional_edges(
         "verify", nodes_b.route_after_verify,
-        {"regenerate": "synthesize", "escalate": "escalate", "done": "hitl_gate"},
+        {"regenerate": "synthesize", "escalate": "escalate", "done": "label_pass"},
     )
-    g.add_edge("escalate", "hitl_gate")
+    g.add_edge("escalate", "label_pass")
+    g.add_edge("label_pass", "hitl_gate")
     g.add_edge("hitl_gate", "render_deploy")
     g.add_edge("render_deploy", END)
     return g.compile(checkpointer=MemorySaver())
