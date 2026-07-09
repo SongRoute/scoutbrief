@@ -1,6 +1,8 @@
-# src/graph.py — S4 그래프 골격 (A레인, SESSIONS.md S4)
-# parse_request → fetch_data → synthesize → verify 선형 관통.
-# 라우팅·재시도(S5), HITL/deploy(S6), 가드레일(S7)은 이 파일에 아직 없다.
+# src/graph.py — S4 골격 + S5 재생성 루프 (A레인 배선, SESSIONS.md S4·S5)
+# parse_request → fetch_data → synthesize → verify → route_after_verify
+#   → regenerate(→synthesize) | escalate | done.
+# 라우팅·escalate·피드백 빌더는 B레인 소유(src/nodes_b.py) — 여기서는 import만.
+# HITL/deploy(S6), 가드레일(S7)은 이 파일에 아직 없다.
 #
 # B 모듈은 시그니처만 배선 (판정 로직·층1 패턴 수정 금지):
 #   verifier.verify_report(draft: dict, tool_results: dict) -> verify_report
@@ -20,7 +22,7 @@ import config
 
 from langgraph.graph import END, START, StateGraph
 
-from src import labels, verifier
+from src import labels, nodes_b, verifier
 from src.llm import chat
 from src.mcp_server import (get_batter_vs_pitcher, get_bullpen_threats,
                             get_pitch_arsenal, get_pitcher_recent)
@@ -189,18 +191,32 @@ def _bvp_pa_total(tool_results: dict) -> int:
 
 
 def synthesize(state: BriefState) -> dict:
-    """섹션별 LLM 생성 + 결정론 후처리(라벨·고정 문구 — 규칙 4: LLM에 맡기지 않음)."""
+    """섹션별 LLM 생성 + 결정론 후처리(라벨·고정 문구 — 규칙 4: LLM에 맡기지 않음).
+    S5 재생성 모드: verify_report가 있으면 retryable(실패∧retry<MAX_RETRY) 섹션만
+    다시 생성하고 retry_counts를 올린다. PASS 섹션의 draft는 보존.
+    재생성 프롬프트 = 구조적 피드백(숫자 미포함) + 기존 지시 + 기존 JSON 블록(R2)."""
     tr = state["tool_results"]
-    draft = {}
-    for key in config.SECTION_KEYS:
+    is_regen = bool(state["verify_report"])
+    retryable, _ = nodes_b.split_failed(state["verify_report"], state["retry_counts"])
+    targets = retryable if is_regen else list(config.SECTION_KEYS)
+    draft = dict(state["draft"])
+    retry_counts = dict(state["retry_counts"])
+    for key in targets:
         spec = SECTION_SPECS[key]
         blocks = "\n\n".join(_json_block(t, tr[t]) for t in spec["tools"])
-        draft[key] = chat(SYSTEM_PROMPT, spec["instructions"] + "\n\n--- 데이터 ---\n\n" + blocks)
-    banner = labels.small_sample_banner(_bvp_pa_total(tr))   # §7 matchup 배너 (결정론)
-    if banner:
-        draft["matchup"] = banner + "\n\n" + draft["matchup"]
-    draft["gameplan"] = draft["gameplan"].rstrip() + "\n\n" + NO_FORWARD_NOTICE
-    return {"draft": draft}
+        instructions = spec["instructions"]
+        if is_regen:
+            instructions = nodes_b.build_regen_feedback(key) + "\n\n" + instructions
+            retry_counts[key] += 1
+        draft[key] = chat(SYSTEM_PROMPT, instructions + "\n\n--- 데이터 ---\n\n" + blocks)
+        # 결정론 후처리 — 섹션을 새로 쓸 때마다 재부착 (재생성 경로 포함)
+        if key == "matchup":
+            banner = labels.small_sample_banner(_bvp_pa_total(tr))   # §7 배너
+            if banner:
+                draft[key] = banner + "\n\n" + draft[key]
+        if key == "gameplan":
+            draft[key] = draft[key].rstrip() + "\n\n" + NO_FORWARD_NOTICE
+    return {"draft": draft, "retry_counts": retry_counts}
 
 
 def verify(state: BriefState) -> dict:
@@ -218,16 +234,31 @@ def initial_state(request: str) -> BriefState:
     )
 
 
-def build_graph():
-    """S4: 선형 관통. 조건 분기·재시도 엣지는 S5에서 추가."""
+def build_graph(poison_node=None):
+    """S5: verify 뒤 조건 라우팅 — regenerate(→synthesize) / escalate / done.
+    재생성마다 retryable 섹션의 retry_counts가 1씩 증가하므로 synthesize는
+    최대 1+MAX_RETRY회 실행 — 구조적으로 무한루프 불가.
+
+    poison_node: 데모 계측 훅(run_demo --poison 소유) — synthesize와 verify 사이에
+    끼워 넣는 상태 함수. 운영 경로는 None."""
     g = StateGraph(BriefState)
     g.add_node("parse_request", parse_request)
     g.add_node("fetch_data", fetch_data)
     g.add_node("synthesize", synthesize)
     g.add_node("verify", verify)
+    g.add_node("escalate", nodes_b.escalate)
     g.add_edge(START, "parse_request")
     g.add_edge("parse_request", "fetch_data")
     g.add_edge("fetch_data", "synthesize")
-    g.add_edge("synthesize", "verify")
-    g.add_edge("verify", END)
+    pre_verify = "synthesize"
+    if poison_node is not None:
+        g.add_node("poison_draft", poison_node)
+        g.add_edge("synthesize", "poison_draft")
+        pre_verify = "poison_draft"
+    g.add_edge(pre_verify, "verify")
+    g.add_conditional_edges(
+        "verify", nodes_b.route_after_verify,
+        {"regenerate": "synthesize", "escalate": "escalate", "done": END},
+    )
+    g.add_edge("escalate", END)
     return g.compile()
