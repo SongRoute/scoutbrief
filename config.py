@@ -1,6 +1,6 @@
 # config.py — 양 레인 공통. 여기 없는 매직넘버를 코드에 쓰지 않는다.
 LEE_JH_ID      = 808982          # 검증: 2026-06-25~07-08 statcast 156행
-FELTNER_ID     = 663372          # 검증: 2026 COL 865행, 11/11경기 1회 등판(선발)
+FELTNER_ID     = 663372          # 검증: 2026 COL 912행, 12/12경기 1회 등판(선발)
 TEAM_OPP       = "COL"
 TEAM_US        = "SF"
 GAME_DATE_US   = "2026-07-09"    # KST 7/10 10:45 경기. rest_days 계산 기준일
