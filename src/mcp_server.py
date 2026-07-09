@@ -1,5 +1,8 @@
 # src/mcp_server.py — MCP 서버 4 Tool (CONTRACT.md §4, 상한 4·추가 금지)
-# - 공통 반환 래퍼: {"data": [...], "source": "statcast(cache:MM-DD HH:MM)"|"statcast(live)", "rows": int}
+# - 공통 반환 래퍼: {"data": [...], "source": "statcast(cache:YYYY-MM-DD)"|"statcast(live)", "rows": int}
+#   cache 시각은 config.CACHE_END(캐시 조회 종료일) — 결정론, clone/checkout 불변.
+#   mtime 금지: 재현 불가 + 비결정 숫자 토큰이 Verifier corpus에 유입됨.
+#   (CONTRACT §4 문면 "MM-DD HH:MM"은 다음 계약 개정에서 YYYY-MM-DD로 갱신 예정)
 # - 캐시 우선. live 경로는 옵션: 환경변수 SCOUTBRIEF_LIVE=1일 때만 시도,
 #   실패 시 캐시로 fallback (발표일 기본은 캐시 — SESSIONS.md S2).
 # - 반올림 금지(CLAUDE.md 규칙 3). 예외: CONTRACT §4에 float(3)이 명시된
@@ -8,7 +11,6 @@
 import os
 import pathlib
 import sys
-from datetime import datetime
 
 import numpy as np
 import pandas as pd
@@ -40,9 +42,10 @@ def _load(path: pathlib.Path) -> pd.DataFrame:
     return _frames[path.name]
 
 
-def _cache_source(*paths: pathlib.Path) -> str:
-    ts = max(p.stat().st_mtime for p in paths)
-    return f"statcast(cache:{datetime.fromtimestamp(ts).strftime('%m-%d %H:%M')})"
+def _cache_source() -> str:
+    """캐시 데이터 시점 = CACHE_END. 캐시 ②③은 날짜 컬럼이 없어 파일별
+    마지막 경기일을 균일하게 쓸 수 없다 — 조회 종료일이 공통 기준."""
+    return f"statcast(cache:{config.CACHE_END})"
 
 
 def _records(df: pd.DataFrame) -> list[dict]:
@@ -94,7 +97,7 @@ def get_pitcher_recent(pitcher_id: int, n_games: int = config.RECENT_GAMES) -> d
     if pitcher_id != config.FELTNER_ID:
         raise ValueError(f"캐시 ①은 pitcher_id={config.FELTNER_ID}만 보유")
     df = _load(RECENT5_CSV)
-    return _wrap(_records(_tail_games(df, n_games)), _cache_source(RECENT5_CSV))
+    return _wrap(_records(_tail_games(df, n_games)), _cache_source())
 
 
 def _tail_games(df: pd.DataFrame, n_games: int) -> pd.DataFrame:
@@ -119,7 +122,7 @@ def get_pitch_arsenal(pitcher_id: int, season: int = 2026) -> dict:
     if pitcher_id != config.FELTNER_ID:
         raise ValueError(f"캐시 ②는 pitcher_id={config.FELTNER_ID}만 보유")
     df = _load(ARSENAL_CSV)
-    return _wrap(_records(df), _cache_source(ARSENAL_CSV))
+    return _wrap(_records(df), _cache_source())
 
 
 # ── Tool 3 ─────────────────────────────────────────────────────────────────
@@ -137,7 +140,7 @@ def get_batter_vs_pitcher(batter_id: int, pitcher_id: int) -> dict:
         except Exception:
             pass
     df = _load(BVP_CSV)
-    return _wrap(_records(df), _cache_source(BVP_CSV))
+    return _wrap(_records(df), _cache_source())
 
 
 # ── Tool 4 ─────────────────────────────────────────────────────────────────
@@ -158,7 +161,7 @@ def get_bullpen_threats(team: str, batter_id: int,
         except Exception:
             pass
     rows = _bullpen_threat_rows(_load(BULLPEN_CSV), _load(SEASON_CSV), batter_id)
-    return _wrap(rows, _cache_source(BULLPEN_CSV, SEASON_CSV))
+    return _wrap(rows, _cache_source())
 
 
 def _bullpen_threat_rows(bullpen: pd.DataFrame, season: pd.DataFrame,

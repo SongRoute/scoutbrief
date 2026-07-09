@@ -38,7 +38,10 @@ def _extract_numbers(text: str) -> set[str]:
 
 
 def _tool_results_numbers(tool_results: dict) -> set[str]:
-    """tool_results JSON에서 숫자 토큰만 정확히 추출 (부분 일치 방지)."""
+    """tool_results JSON 전체에서 숫자 토큰을 추출해 corpus로 사용 (CONTRACT §5).
+    토큰 단위 대조라 substring 부분 일치(draft "94" vs corpus "94.5")는 차단되지만,
+    corpus에는 pitcher_id·rows·threat_score·source 등 모든 필드의 숫자가 포함된다 —
+    draft의 근거 없는 1~2자리 수가 우연히 일치하면 통과한다 (계약 명시 설계, 수용된 리스크)."""
     serialized = json.dumps(tool_results, ensure_ascii=False)
     return set(_NUMBER_RE.findall(serialized))
 
