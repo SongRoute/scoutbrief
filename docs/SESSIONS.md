@@ -8,7 +8,7 @@
 | S2 MCP 서버 | A | S1 | 4 Tool (CONTRACT §4), 캐시 우선 + source 메타, live 실패 fallback | `python scripts/smoke_mcp.py` — 4 Tool JSON에 source·rows 존재, 네트워크 차단 후 재실행에도 통과 |
 | S3 Verifier | B | S1 | 층1 정규화 + 층2 POLICY_CONSTANTS + 소표본 라벨러 (CONTRACT §5) | `pytest tests/test_verifier.py` — 최소 6케이스: 정상통과/오염검출/[T3]무시/날짜무시/정책상수허용/"2스트라이크"무시. 이후 verifier-redteam으로 적대 케이스 추가 |
 | S4 그래프 골격 | A 단독 | S2,S3 | graph.py 생성(이 시점 전 생성 금지), parse→fetch→synthesize→verify 선형 관통. B 모듈은 시그니처만 서브에이전트로 추출해 배선 | `python run_demo.py --linear` — 4섹션 draft 생성 |
-| S5 재생성 루프 | B(노드) + A(배선) | S4 | 라우팅: retryable(=실패∧retry<MAX_RETRY)만 재생성, retryable 없고 failed 있으면 전부 escalate. 라벨 부착 | `pytest tests/test_routing.py` + `python run_demo.py --poison arsenal` 루프 로그 확인 |
+| S5 재생성 루프 | B(노드) + A(배선) | S4 | 라우팅: retryable(=실패∧retry<MAX_RETRY)만 재생성, retryable 없고 failed 있으면 전부 escalate. 라벨 부착 | `pytest tests/test_routing.py` + `python run_demo.py --poison matchup` 루프 로그 확인 (인자는 SECTION_KEYS의 섹션 키 — 개정 2026-07-10, arsenal은 툴 키라 오기) |
 | S6 HITL/LLM08 | B | S4 | interrupt, HMAC 승인 토큰, deploy 게이트 | `python run_demo.py --deploy-without-token` → PermissionError / `--approve` → out/*.md 생성 |
 | S7 가드레일 | A | S4 | LLM01, LLM06(허용 우선), guard_output을 label_pass로(+deploy 잔류), RAG 더미 3건(시간 없으면 생략) | `pytest tests/test_guards.py` — "부상자 명단 복귀" 비마스킹 / "수술 부위·재활 일정" 마스킹 / 인젝션 ValueError |
 | S8 통합·리허설 | 양측 | 전부 | 실리포트 생성, 시연 3장면(환각 차단/HITL 게이트/라벨링+캐시 fallback), 스크린레코딩 | 리포트 md + 녹화본 |

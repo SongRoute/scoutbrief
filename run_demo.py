@@ -2,6 +2,7 @@
 # S4: --linear (선형 관통, 4섹션 draft + verify 리포트 콘솔 출력).
 # S5: --poison <섹션> (1차 draft 오염 → verify FAIL → 재생성 루프 로그).
 # S6: --deploy-without-token (LLM08 차단 재현) / --approve (HITL 승인→배포).
+# 개정 2026-07-10: --reject (HITL 반려 = 토큰 미발급, CONTRACT §6).
 #     이 파일이 곧 "그래프 외부 콘솔"이다 — issue_approval_token은 여기서만
 #     호출된다 (CONTRACT §6 LLM08; 노드 미호출은 test_hitl 정적 검사가 보증).
 import argparse
@@ -194,6 +195,21 @@ def run_approve() -> None:
     print(f"[hitl] final_report {len(state['final_report'])}자 기록")
 
 
+def run_reject() -> None:
+    """HITL 반려 데모 (CONTRACT §6): 분석관 화면 표시 후 토큰을 발급하지 않는다 —
+    반려 = 토큰 미발급. 그래프는 interrupt에 잔류하고 배포 산출물은 생성되지 않는다.
+    PermissionError 경로(--deploy-without-token)와 구분: 그쪽은 무효 토큰으로
+    배포를 '시도'한 경우의 방어, 이쪽은 시도 자체가 없는 정상 반려."""
+    _ensure_demo_secret()
+    graph, payload = _run_to_gate()
+    _print_analyst_view(payload)
+    snapshot = graph.get_state(HITL_THREAD)
+    assert snapshot.next, "그래프가 hitl_gate interrupt에 잔류해야 한다"
+    assert not snapshot.values.get("final_report"), "반려 경로에 배포 산출물 금지"
+    print("\n[hitl] 분석관 반려 — 승인 토큰 미발급. 그래프는 interrupt에 잔류, "
+          "배포 산출물 없음 (CONTRACT §6: 반려 = 토큰 미발급).")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="ScoutBrief E2E 데모")
     parser.add_argument("--linear", action="store_true",
@@ -204,6 +220,8 @@ def main() -> None:
                         help="LLM08 차단 재현 (S6): 토큰 없이 배포 → PermissionError")
     parser.add_argument("--approve", action="store_true",
                         help="HITL 승인→배포 (S6): 콘솔 토큰 발급 → out/*.md 생성")
+    parser.add_argument("--reject", action="store_true",
+                        help="HITL 반려 (CONTRACT §6): 토큰 미발급 → 그래프 잔류, 배포 없음")
     args = parser.parse_args()
 
     if args.poison:
@@ -214,6 +232,9 @@ def main() -> None:
         return
     if args.approve:
         run_approve()
+        return
+    if args.reject:
+        run_reject()
         return
     if args.linear:
         run_linear()

@@ -1,6 +1,6 @@
 """
 guards.py — S7 가드레일 (A레인, CONTRACT §6).
-guard_input(LLM01): 인젝션 패턴 매치 시 ValueError, 통과 시 원문 반환 (§2:43).
+guard_input(LLM01): 인젝션 패턴 매치 시 ValueError, 통과 시 원문 반환 (§2).
 guard_output(LLM06): 허용 패턴 우선 검사 후 차단 문장만 마스킹 — 문장 단위.
 둘 다 결정론. LLM 호출 없음 (CLAUDE.md 규칙 4의 정신).
 
@@ -10,13 +10,12 @@ guard_output은 멱등이다 (§6 "멱등 이중방어" — label_pass 끝 + ren
 - 마스킹 치환 토큰(MASK_TOKEN)에는 BLOCK 패턴에 걸리는 문자열이 없어
   재적용 시 다시 마스킹되지 않는다.
 
-§6의 "연봉/계약, 사생활" 차단은 계약이 정규식을 명시하지 않아 이번 세션에서
-구현하지 않았다 — 임의 패턴 도입 금지, 계약 개정 안건으로 보고됨.
+연봉/사생활 축은 §6에서 삭제됨(개정 2026-07-10) — 원천이 statcast 캐시 5종뿐이라
+입력 채널이 없다. rag_notes가 외부 텍스트를 수용하는 시점에 재도입 검토 (CONTRACT §6).
 """
 import re
 
-# ⚠ 계약 미정의 — CONTRACT §6 LLM01은 차단 패턴을 명시하지 않는다.
-# 아래는 세션 내 합의로 도입한 잠정 패턴. 계약 개정 안건 #6.
+# LLM01 차단 패턴 6종 — CONTRACT §6 문면과 문자 단위 일치가 계약 (개정 2026-07-10).
 INJECTION_PATTERNS = [
     r"(?i)ignore\s+(all\s+)?(previous|prior|above)\s+instructions",
     r"(?i)disregard\s+(the\s+)?(system|previous)",
@@ -27,14 +26,15 @@ INJECTION_PATTERNS = [
 ]
 _INJECTION_RES = [re.compile(p) for p in INJECTION_PATTERNS]
 
-# LLM06 (CONTRACT §6:166~168 문면 그대로) — 허용 패턴 우선, 문장 단위 마스킹.
+# LLM06 (CONTRACT §6 문면 그대로) — 허용 패턴 우선, 문장 단위 마스킹.
 ALLOW = r"부상자\s*명단|IL\s*(등재|복귀)|결장"
 BLOCK = r"(수술|재활)\s*(부위|일정|경과)|진단"
 _ALLOW_RE = re.compile(ALLOW)
 _BLOCK_RE = re.compile(BLOCK)
 
-# 마스킹 치환 토큰 — BLOCK/ALLOW 어느 패턴에도 매치되지 않고 문장 종결부호가
-# 없어야 한다 (멱등성: 재적용 시 재분할·재마스킹되지 않는 근거).
+# 마스킹 치환 토큰 — CONTRACT §6 문면과 문자 단위 일치. BLOCK/ALLOW 어느 패턴에도
+# 매치되지 않고 문장 종결부호가 없어야 한다 (§6 멱등 조건: 재적용 시
+# 재분할·재마스킹되지 않는 근거).
 MASK_TOKEN = "[의료 상세 마스킹 — LLM06]"
 assert not _BLOCK_RE.search(MASK_TOKEN) and not _ALLOW_RE.search(MASK_TOKEN)
 
@@ -45,7 +45,7 @@ _SENTENCE_SEP = re.compile(r"((?<=[.!?…])\s+)")
 
 
 def guard_input(request: str) -> str:
-    """LLM01 입력 필터 — 인젝션 패턴 매치 시 ValueError, 통과 시 원문 반환 (§2:43)."""
+    """LLM01 입력 필터 — 인젝션 패턴 매치 시 ValueError, 통과 시 원문 반환 (§2)."""
     for pattern in _INJECTION_RES:
         if pattern.search(request):
             raise ValueError(
@@ -54,7 +54,7 @@ def guard_input(request: str) -> str:
 
 
 def _guard_sentence(sentence: str) -> str:
-    """허용 패턴 우선: ALLOW 매치 문장은 BLOCK 검사 없이 통과 (§6:166)."""
+    """허용 패턴 우선: ALLOW 매치 문장은 BLOCK 검사 없이 통과 (§6)."""
     if _ALLOW_RE.search(sentence):
         return sentence
     if _BLOCK_RE.search(sentence):
