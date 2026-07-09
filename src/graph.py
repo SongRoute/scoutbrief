@@ -113,7 +113,14 @@ SECTION_SPECS = {
             "섹션: 선발 Ryan Feltner 분석.\n"
             "- [T1] 최근 5경기 투구 단위 데이터로 최근 폼(경기별 구속·구종 구성 흐름)을 서술.\n"
             "- [T2] 아스널에서 stand가 'L'(좌타 상대)인 행을 기본으로, count_group"
-            "(ALL/2K/AHEAD/BEHIND)별 구종 패턴을 표로 정리. 우타(stand 'R') 수치는 쓰지 않는다.\n"
+            "(ALL/2K/AHEAD/BEHIND)별 구종 패턴을 표로 정리 — 이 표에는 runners_group이 "
+            "'ALL'인 행만 쓴다. 우타(stand 'R') 수치는 쓰지 않는다.\n"
+            "- [T2] runners_group이 'ON'(주자 있음)/'EMPTY'(주자 없음)인 행으로 주자 유무별 "
+            "구종 구성 차이를 서술하되, 두 그룹의 usage_pct 수치를 나란히 옮겨 적는 비교로만 "
+            "서술한다. 그 차이의 효과·유불리·의도·전략적 의미는 해석하지 않는다 — "
+            "그 판단은 분석관 몫이다.\n"
+            "- 주자 스플릿에서 pitches가 작은 행을 인용할 때는 pitches 값을 병기해 표본 "
+            "크기를 드러낸다. '작다'의 기준 수치는 본문에 쓰지 않는다.\n"
             "- usage_pct·avg_velo·xwoba·zone_top2는 JSON 값 그대로 인용."),
     },
     "matchup": {

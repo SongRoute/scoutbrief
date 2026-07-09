@@ -19,8 +19,8 @@ SCHEMAS = {
         "description", "zone", "stand", "balls", "strikes", "on_base_any",
     ],
     "feltner_arsenal_2026.csv": [
-        "stand", "count_group", "pitch_type", "n", "usage_pct", "avg_velo",
-        "avg_pfx_x", "avg_pfx_z", "xwoba", "zone_top2",
+        "stand", "count_group", "runners_group", "pitch_type", "n", "usage_pct",
+        "avg_velo", "avg_pfx_x", "avg_pfx_z", "xwoba", "zone_top2",
     ],
     "bvp_lee_feltner.csv": [
         "pitch_type", "n", "xwoba", "pa_total", "ab_total", "hits_total",
@@ -38,6 +38,7 @@ SCHEMAS = {
 }
 
 COUNT_GROUPS = {"ALL", "2K", "AHEAD", "BEHIND"}
+RUNNERS_GROUPS = {"ALL", "ON", "EMPTY"}          # CONTRACT §3 ② (개정 2026-07-10)
 HANDS = {"L", "R"}
 
 _failures = []
@@ -70,11 +71,16 @@ def main() -> int:
         ars = frames["feltner_arsenal_2026.csv"]
         check(len(ars) > 0, "②: 비어 있음")
         check(set(ars["count_group"]) <= COUNT_GROUPS, "②: count_group 도메인 위반")
+        check(set(ars["runners_group"]) <= RUNNERS_GROUPS, "②: runners_group 도메인 위반")
+        check({"ON", "EMPTY"} <= set(ars["runners_group"]),
+              "②: 주자 스플릿 행(ON/EMPTY) 부재")
+        check(((ars["count_group"] == "ALL") | (ars["runners_group"] == "ALL")).all(),
+              "②: 축 교차 셀 존재 — 행은 count_group 또는 runners_group이 'ALL'이어야 함")
         check(set(ars["stand"]) <= HANDS, "②: stand 도메인 위반")
-        for (st, cg), g in ars.groupby(["stand", "count_group"]):
+        for (st, cg, rg), g in ars.groupby(["stand", "count_group", "runners_group"]):
             total = g["usage_pct"].sum()
             check(abs(total - 100.0) < 0.05,
-                  f"②: usage_pct 합 {total} != 100 ({st}×{cg})")
+                  f"②: usage_pct 합 {total} != 100 ({st}×{cg}×{rg})")
 
         bvp = frames["bvp_lee_feltner.csv"]
         if len(bvp):  # 극소표본 예상 — 0행(헤더만) 허용

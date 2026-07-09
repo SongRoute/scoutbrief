@@ -61,6 +61,13 @@ def count_group_masks(df: pd.DataFrame) -> dict:
     }
 
 
+def runners_group_masks(df: pd.DataFrame) -> dict:
+    """runners_group 라벨 정의 (CONTRACT §3 ②) —
+    ON = 투구 시점 on_1b/on_2b/on_3b 중 하나라도 non-null, EMPTY = 전부 null."""
+    on = df[["on_1b", "on_2b", "on_3b"]].notna().any(axis=1)
+    return {"ON": on, "EMPTY": ~on}
+
+
 def pct_largest_remainder(counts: pd.Series) -> pd.Series:
     """float(1) usage_pct — largest remainder로 그룹 내 합을 정확히 100.0으로 맞춘다."""
     raw = counts / counts.sum() * 100 * 10          # 0.1%p 단위 정수 배분
@@ -101,13 +108,19 @@ def build_recent5(feltner: pd.DataFrame) -> pd.DataFrame:
 
 
 def build_arsenal(feltner: pd.DataFrame) -> pd.DataFrame:
-    """② feltner_arsenal_2026.csv — stand × count_group × pitch_type 1행."""
+    """② feltner_arsenal_2026.csv — stand × (count_group | runners_group) × pitch_type 1행.
+    축 규약 (CONTRACT §3 ②): 두 스플릿 축은 교차하지 않는다 — 셀 목록이
+    count_group×(runners='ALL')와 runners×(count='ALL')의 합집합이라 교차 셀은
+    구조적으로 생성되지 않는다. count_group_masks의 'ALL'이 기본 아스널
+    (ALL×ALL) 행을 만들므로 runners 쪽 'ALL'은 별도 셀로 두지 않는다."""
     rows = []
     for stand in ("L", "R"):
         sub = feltner[feltner["stand"] == stand]
         if sub.empty:
             continue
-        for cg, mask in count_group_masks(sub).items():
+        cells = [(cg, "ALL", mask) for cg, mask in count_group_masks(sub).items()]
+        cells += [("ALL", rg, mask) for rg, mask in runners_group_masks(sub).items()]
+        for cg, rg, mask in cells:
             g = sub[mask]
             if g.empty:
                 continue
@@ -117,7 +130,8 @@ def build_arsenal(feltner: pd.DataFrame) -> pd.DataFrame:
                 gp = g[g["pitch_type"] == pt]
                 xw = gp["estimated_woba_using_speedangle"].dropna()
                 rows.append({
-                    "stand": stand, "count_group": cg, "pitch_type": pt,
+                    "stand": stand, "count_group": cg, "runners_group": rg,
+                    "pitch_type": pt,
                     "n": int(counts[pt]),
                     "usage_pct": pcts[pt],
                     "avg_velo": round(gp["release_speed"].mean(), 1),

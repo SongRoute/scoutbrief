@@ -11,6 +11,11 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 import config
 
 REQUIRED_KEYS = ("data", "source", "rows")
+# CONTRACT §3 ② = §4 Tool 2 행 스키마 (개정 2026-07-10: runners_group 포함)
+TOOL2_FIELDS = (
+    "stand", "count_group", "runners_group", "pitch_type", "n", "usage_pct",
+    "avg_velo", "avg_pfx_x", "avg_pfx_z", "xwoba", "zone_top2",
+)
 TOOL4_FIELDS = (
     "pitcher_id", "name", "throws", "appearances_7d", "pitches_7d", "last_game",
     "rest_days", "vsL_xwoba", "vsL_top2_usage", "vsL_low_n", "bvp_pa", "bvp_xwoba",
@@ -37,6 +42,15 @@ def run_all(tag: str) -> None:
         assert res["rows"] > 0, f"{name}: 빈 데이터"
         assert res["source"].startswith("statcast("), f"{name}: source 형식 위반"
         print(f"  [{tag}] {name}: rows={res['rows']} source={res['source']}")
+
+    arsenal = results["get_pitch_arsenal"]["data"]
+    for row in arsenal:
+        missing = [f for f in TOOL2_FIELDS if f not in row]
+        assert not missing, f"Tool2 필드 누락: {missing}"
+        assert row["count_group"] == "ALL" or row["runners_group"] == "ALL", \
+            "Tool2: 축 교차 셀 (§3 ② 축 규약 위반)"
+    rgs = {row["runners_group"] for row in arsenal}
+    assert {"ON", "EMPTY"} <= rgs, f"Tool2: 주자 스플릿 행 부재 (관측: {rgs})"
 
     threats = results["get_bullpen_threats"]["data"]
     for row in threats:
