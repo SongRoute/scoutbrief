@@ -4,3 +4,4 @@ __pycache__/
 .pytest_cache/
 .venv/
 # cache/*.csv는 커밋 대상 — 무시하지 않는다 (CLAUDE.md 규칙 2)
+.env
