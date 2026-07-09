@@ -180,11 +180,21 @@ def run_deploy_without_token() -> None:
 
 
 def run_approve() -> None:
-    """HITL 승인→배포: 분석관 화면 표시 → 콘솔(이 함수)이 토큰 발급 →
-    Command(resume=토큰) 재개 → render_deploy가 검증된 배포본을 out/에 기록."""
+    """HITL 승인→배포: 분석관 화면 표시 → 콘솔 입력으로 승인/반려 판단 →
+    y면 콘솔(이 함수)이 토큰 발급 → Command(resume=토큰) 재개 →
+    render_deploy가 검증된 배포본을 out/에 기록.
+    y가 아니면 run_reject와 동일한 반려 종료 — 토큰 미발급, 그래프 잔류 (§6)."""
     _ensure_demo_secret()
     graph, payload = _run_to_gate()
     _print_analyst_view(payload)
+    answer = input("승인하려면 y 입력: ")
+    if answer.strip().lower() != "y":
+        snapshot = graph.get_state(HITL_THREAD)
+        assert snapshot.next, "그래프가 hitl_gate interrupt에 잔류해야 한다"
+        assert not snapshot.values.get("final_report"), "반려 경로에 배포 산출물 금지"
+        print("\n[hitl] 분석관 반려 — 승인 토큰 미발급. 그래프는 interrupt에 잔류, "
+              "배포 산출물 없음 (CONTRACT §6: 반려 = 토큰 미발급).")
+        return
     # LLM08: 발급은 그래프 외부(이 콘솔)에서만 — 서명 대상은 방금 검토한 전문.
     token = hitl.issue_approval_token(payload["report_md"])
     print(f"\n[hitl] 콘솔에서 승인 토큰 발급 (HMAC-SHA256): {token[:16]}…")

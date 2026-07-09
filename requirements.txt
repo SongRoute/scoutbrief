@@ -1,5 +1,5 @@
 pybaseball==2.2.7
-langgraph
+langgraph==1.2.8
 mcp
 langchain-mcp-adapters
 pytest
