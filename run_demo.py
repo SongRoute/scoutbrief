@@ -1,13 +1,19 @@
 # run_demo.py — E2E 데모 러너 (CLAUDE.md 명령 표면)
 # S4: --linear (선형 관통, 4섹션 draft + verify 리포트 콘솔 출력).
 # S5: --poison <섹션> (1차 draft 오염 → verify FAIL → 재생성 루프 로그).
-# --deploy-without-token / --approve(S6)는 해당 세션에서 구현.
+# S6: --deploy-without-token (LLM08 차단 재현) / --approve (HITL 승인→배포).
+#     이 파일이 곧 "그래프 외부 콘솔"이다 — issue_approval_token은 여기서만
+#     호출된다 (CONTRACT §6 LLM08; 노드 미호출은 test_hitl 정적 검사가 보증).
 import argparse
 import json
+import os
+import secrets
 import sys
 
+from langgraph.types import Command
+
 import config
-from src import nodes_b
+from src import hitl, nodes_b
 from src.graph import TOOL_FOOTNOTES, build_graph, initial_state
 
 DEFAULT_REQUEST = (
@@ -126,6 +132,68 @@ def run_poison(section: str) -> None:
         print(state["draft"][section])
 
 
+# --- S6 HITL/LLM08 데모 -----------------------------------------------------
+# 체크포인터 재개용 스레드 식별자 — 단일 실행 데모라 고정값.
+HITL_THREAD = {"configurable": {"thread_id": "hitl-demo"}}
+
+
+def _ensure_demo_secret() -> None:
+    """승인 키 준비: 환경변수 우선, 미설정 시 프로세스 한정 랜덤 키 생성.
+    단일 프로세스 데모라 발급(콘솔)과 검증(hitl_gate)이 같은 env를 공유한다."""
+    if not os.environ.get(hitl.APPROVAL_SECRET_ENV):
+        os.environ[hitl.APPROVAL_SECRET_ENV] = secrets.token_hex()
+        print(f"[hitl] {hitl.APPROVAL_SECRET_ENV} 미설정 — 프로세스 한정 랜덤 키 생성")
+
+
+def _run_to_gate():
+    """HITL 그래프를 hitl_gate의 interrupt까지 실행하고 분석관 페이로드를 꺼낸다."""
+    graph = build_graph(with_hitl=True)
+    state = graph.invoke(initial_state(DEFAULT_REQUEST), HITL_THREAD)
+    payload = state["__interrupt__"][0].value
+    return graph, payload
+
+
+def _print_analyst_view(payload: dict) -> None:
+    """분석관 화면 (계획 승인 범위): 배포 후보 전문 + escalated_sections +
+    tool_results 원본(대조용) + 검토 안내. verify_report는 R1에 따라 없음."""
+    print("=" * 72)
+    print("[HITL 분석관 검토 화면]")
+    print(f"\n{payload['review_notice']}")
+    print(f"\nescalated_sections: {payload['escalated_sections']}")
+    print("\n--- 배포 후보 전문 " + "-" * 53 + "\n")
+    print(payload["report_md"])
+    print("--- 대조용 원천 데이터 (tool_results 원본) " + "-" * 29 + "\n")
+    print(json.dumps(payload["tool_results"], ensure_ascii=False))
+    print("=" * 72)
+
+
+def run_deploy_without_token() -> None:
+    """LLM08 차단 재현: 관문까지 정상 진행 후 토큰 없이 배포 재개 → PermissionError."""
+    _ensure_demo_secret()
+    graph, payload = _run_to_gate()
+    print(f"[hitl] 관문 도달 — escalated_sections={payload['escalated_sections']}")
+    # resume=None은 langgraph 1.2.8 내부 버그(UnboundLocalError)를 건드린다 —
+    # 빈 토큰("")으로 재개해도 의미 동일: 토큰 부재 → approved=False.
+    print("[hitl] 승인 토큰 없이(빈 토큰) 배포 시도 → PermissionError 예상\n")
+    graph.invoke(Command(resume=""), HITL_THREAD)  # render_deploy가 raise — 전파시킴
+
+
+def run_approve() -> None:
+    """HITL 승인→배포: 분석관 화면 표시 → 콘솔(이 함수)이 토큰 발급 →
+    Command(resume=토큰) 재개 → render_deploy가 검증된 배포본을 out/에 기록."""
+    _ensure_demo_secret()
+    graph, payload = _run_to_gate()
+    _print_analyst_view(payload)
+    # LLM08: 발급은 그래프 외부(이 콘솔)에서만 — 서명 대상은 방금 검토한 전문.
+    token = hitl.issue_approval_token(payload["report_md"])
+    print(f"\n[hitl] 콘솔에서 승인 토큰 발급 (HMAC-SHA256): {token[:16]}…")
+    state = graph.invoke(Command(resume=token), HITL_THREAD)
+    out_path = hitl.OUT_DIR / hitl.OUT_FILENAME
+    assert state["approved"] and out_path.exists()
+    print(f"[hitl] 승인 확인(approved={state['approved']}) → 배포 완료: {out_path}")
+    print(f"[hitl] final_report {len(state['final_report'])}자 기록")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="ScoutBrief E2E 데모")
     parser.add_argument("--linear", action="store_true",
@@ -133,16 +201,20 @@ def main() -> None:
     parser.add_argument("--poison", metavar="섹션",
                         help="오염→재생성 루프 데모 (S5): 섹션 1차 draft에 날조 수치 주입")
     parser.add_argument("--deploy-without-token", action="store_true",
-                        help="LLM08 차단 재현 (S6에서 구현)")
+                        help="LLM08 차단 재현 (S6): 토큰 없이 배포 → PermissionError")
     parser.add_argument("--approve", action="store_true",
-                        help="HITL 승인→배포 (S6에서 구현)")
+                        help="HITL 승인→배포 (S6): 콘솔 토큰 발급 → out/*.md 생성")
     args = parser.parse_args()
 
     if args.poison:
         run_poison(args.poison)
         return
-    if args.deploy_without_token or args.approve:
-        sys.exit("--deploy-without-token/--approve는 S6(HITL/LLM08)에서 구현됩니다 — docs/SESSIONS.md 참조.")
+    if args.deploy_without_token:
+        run_deploy_without_token()
+        return
+    if args.approve:
+        run_approve()
+        return
     if args.linear:
         run_linear()
     else:

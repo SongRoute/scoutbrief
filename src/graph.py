@@ -1,8 +1,9 @@
-# src/graph.py — S4 골격 + S5 재생성 루프 (A레인 배선, SESSIONS.md S4·S5)
+# src/graph.py — S4 골격 + S5 재생성 루프 + S6 HITL 배선 (A레인 배선, SESSIONS.md S4~S6)
 # parse_request → fetch_data → synthesize → verify → route_after_verify
 #   → regenerate(→synthesize) | escalate | done.
 # 라우팅·escalate·피드백 빌더는 B레인 소유(src/nodes_b.py) — 여기서는 import만.
-# HITL/deploy(S6), 가드레일(S7)은 이 파일에 아직 없다.
+# S6 (with_hitl=True): done/escalate → hitl_gate → render_deploy — 노드는
+# B레인 소유(src/hitl.py), 여기서는 배선만. 가드레일(S7)은 이 파일에 아직 없다.
 #
 # B 모듈은 시그니처만 배선 (판정 로직·층1 패턴 수정 금지):
 #   verifier.verify_report(draft: dict, tool_results: dict) -> verify_report
@@ -20,9 +21,10 @@ from typing import TypedDict
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 import config
 
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 
-from src import labels, nodes_b, verifier
+from src import hitl, labels, nodes_b, verifier
 from src.llm import chat
 from src.mcp_server import (get_batter_vs_pitcher, get_bullpen_threats,
                             get_pitch_arsenal, get_pitcher_recent)
@@ -234,13 +236,17 @@ def initial_state(request: str) -> BriefState:
     )
 
 
-def build_graph(poison_node=None):
+def build_graph(poison_node=None, with_hitl=False):
     """S5: verify 뒤 조건 라우팅 — regenerate(→synthesize) / escalate / done.
     재생성마다 retryable 섹션의 retry_counts가 1씩 증가하므로 synthesize는
     최대 1+MAX_RETRY회 실행 — 구조적으로 무한루프 불가.
 
     poison_node: 데모 계측 훅(run_demo --poison 소유) — synthesize와 verify 사이에
-    끼워 넣는 상태 함수. 운영 경로는 None."""
+    끼워 넣는 상태 함수. 운영 경로는 None.
+
+    with_hitl (S6): done/escalate가 END 대신 hitl_gate → render_deploy로 이어진다.
+    hitl_gate의 interrupt() 때문에 체크포인터(MemorySaver)로 컴파일 —
+    재개는 Command(resume=토큰). False(기본)면 S4/S5 경로 그대로 (--linear/--poison)."""
     g = StateGraph(BriefState)
     g.add_node("parse_request", parse_request)
     g.add_node("fetch_data", fetch_data)
@@ -256,9 +262,23 @@ def build_graph(poison_node=None):
         g.add_edge("synthesize", "poison_draft")
         pre_verify = "poison_draft"
     g.add_edge(pre_verify, "verify")
+    if not with_hitl:
+        g.add_conditional_edges(
+            "verify", nodes_b.route_after_verify,
+            {"regenerate": "synthesize", "escalate": "escalate", "done": END},
+        )
+        g.add_edge("escalate", END)
+        return g.compile()
+    # S6: 완성 경로(done)와 escalate 잔존 경로 모두 분석관 관문을 거친다 —
+    # escalated_sections는 페이로드로 노출되고 (R1: verify_report는 미열람),
+    # 승인 여부 판단은 사람 몫.
+    g.add_node("hitl_gate", hitl.hitl_gate)
+    g.add_node("render_deploy", hitl.render_deploy)
     g.add_conditional_edges(
         "verify", nodes_b.route_after_verify,
-        {"regenerate": "synthesize", "escalate": "escalate", "done": END},
+        {"regenerate": "synthesize", "escalate": "escalate", "done": "hitl_gate"},
     )
-    g.add_edge("escalate", END)
-    return g.compile()
+    g.add_edge("escalate", "hitl_gate")
+    g.add_edge("hitl_gate", "render_deploy")
+    g.add_edge("render_deploy", END)
+    return g.compile(checkpointer=MemorySaver())
