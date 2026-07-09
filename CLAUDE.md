@@ -11,6 +11,8 @@ COL @ SF (미국시간 2026-07-09) 프리뷰 리포트 자동 생성.
 1. config.py의 상수 외 매직넘버 금지. 새 상수는 config에 추가 후 사용.
 2. cache/*.csv는 읽기 전용. 재생성은 scripts/build_cache.py로만.
 3. 반올림은 build_cache.py에서만. Tool과 LLM 프롬프트에서 반올림 금지.
+   예외: CONTRACT.md §4에 float(n)이 명시적으로 지정된 Tool 반환 필드는
+   Tool 내부에서 round(x, n)을 수행한다 (현재 해당: Tool 4의 vsL_xwoba, bvp_xwoba).
 4. Verifier·threat_score·소표본 라벨은 결정론적 코드. LLM 호출 금지.
 5. BriefState 계약 (상세: CONTRACT.md):
    - 하류 노드(label_pass/hitl_gate/render_deploy)는 verify_report를 읽지 않는다.

@@ -136,7 +136,8 @@ assert (df["pitching_team"] == "COL").all(), "pybaseball team= 필터 의미 변
    |---|---|
    | pitcher_id, name, throws | ④ |
    | appearances_7d, pitches_7d, last_game, rest_days | ④ (rest_days = GAME_DATE_US − last_game) |
-   | vsL_xwoba float(3), vsL_top2_usage | ⑤ stand=='L' 시즌 집계 |
+   | vsL_xwoba float(3) | ⑤ stand=='L' 시즌 집계 |
+   | vsL_top2_usage str 예: "SL,FF" | ⑤ vsL 사용률 상위 2개 구종명 쉼표 연결 (캐시 ② zone_top2 관례). 동률: 투구수 내림차순 → 구종명 오름차순 |
    | vsL_low_n 0/1 | ⑤ vsL 투구수 < VSL_LOW_N_PITCHES |
    | bvp_pa, bvp_xwoba float(3) | ⑤ batter==LEE_JH_ID |
    | availability 0~2 | config.availability() |
