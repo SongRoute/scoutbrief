@@ -7,9 +7,15 @@
 
 ```bash
 cd ~/projects/baseball/scoutbrief
-pytest -q                            # 47 passed 확인
+pytest -q                            # 47 passed 확인 (exp/allin-runner-split 병합 후에는 54)
 python scripts/validate_cache.py     # PASS 확인
 ```
+
+- 녹화 직전 `python run_demo.py --linear` 1회를 실행해 장면 2의 오류 클래스가
+  재현되는지 확인하고, **그 실행의 관측을 logs/runs.md에 1행 기록한다**
+  (실행별 관측 로그 규율 — logs/runs.md 상단 클래스 표기 참조).
+  logs/runs.md는 exp/allin-runner-split 브랜치에 있으므로, 병합 전 main에서
+  녹화한다면 관측 행은 exp 쪽 로그에 기재한다.
 
 - 발표일 원칙: 라이브 조회 없음. 모든 Tool은 캐시 경로(`source=statcast(cache:2026-07-08)`)로 동작한다.
 - draft 산문은 LLM 생성이라 **실행마다 문장·수치 배치가 달라진다**. 아래 지시는
@@ -76,7 +82,11 @@ python run_demo.py --linear
 ### 2-2. 사실 오류를 육안으로 찾는다
 
 verify가 PASS시킨 draft를 위로 스크롤해 아래 오류 클래스를 확인한다.
-**세 클래스 중 최소 하나는 거의 매 실행 재현된다** (리허설 3회 기준). 여러 개면
+**세 클래스 중 최소 하나는 거의 매 실행 재현된다** — 이 전제는 2026-07-10 실측으로
+재검증됐다: gpt-4o-mini(기본 모델) 6회 실행(P4 --linear 5회 + P5 --approve 1회,
+logs/runs.md) **전부에서 최소 1클래스 재현**, 6회 전부 (가) matchup 반복 포함,
+(나) 5회, (다) 5회. 측정은 exp/allin-runner-split 브랜치에서 했으나 세 클래스의
+해당 섹션(matchup/bullpen/gameplan) 지시문은 main과 동일하다. 여러 개면
 가장 명백한 것 하나만 가리킨다:
 
 - **(가) matchup 통산 전적 확인** — 원천(캐시 ③)의 통산은 전 구종 공통 `5타수 2안타`,
@@ -185,9 +195,9 @@ python scripts/smoke_mcp.py
 | `python run_demo.py --linear` | 선형 관통, 4섹션 draft + verify 리포트 | `VERIFY 리포트` 4×PASS |
 | `python run_demo.py --poison matchup` | 오염→검출→재생성 루프 | `matchup mismatch: 111.73` → PASS 회복 |
 | `python run_demo.py --deploy-without-token` | 무토큰 배포 시도 차단 (LLM08) | `PermissionError: LLM08: 미승인 배포 차단 …` |
-| `python run_demo.py --approve` | 분석관 화면 → 콘솔 토큰 발급 → 배포 | `배포 완료: out/brief_COL_SF_2026-07-09.md` |
+| `python run_demo.py --approve` | 분석관 화면 → `승인하려면 y 입력:` 프롬프트에 **y** → 토큰 발급 → 배포. y 외 입력이면 --reject와 동일(토큰 미발급, 배포 없음) **[병합 후 유효 — main 각본의 --approve는 화면 출력 직후 자동 발급이며 입력 단계가 없다]** | `배포 완료: out/brief_COL_SF_2026-07-09.md` |
 | `python run_demo.py --reject` | 분석관 반려 = 토큰 미발급 | 그래프 interrupt 잔류, out/ 무변화 |
-| `pytest -q` | 회귀 47건 | `47 passed` |
+| `pytest -q` | 회귀 47건 (exp 병합 후 54건) | `47 passed` (병합 후 `54 passed`) |
 | `python scripts/validate_cache.py` | 캐시 5파일 스키마·불변식 | `PASS` |
 | `python scripts/smoke_mcp.py` | 4 Tool 스모크 + 오프라인 재실행 | `PASS` |
 
