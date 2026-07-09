@@ -1,5 +1,5 @@
 """
-test_hitl.py — S6 HITL/LLM08 (SESSIONS.md S6, CONTRACT §6:171).
+test_hitl.py — S6 HITL/LLM08 (SESSIONS.md S6, CONTRACT §6).
 토큰 왕복/위조/변조 차단, 미승인 deploy PermissionError, 페이로드 R1 준수,
 LLM08 정적 검사(노드는 발급하지 않는다). 판정은 pytest가 한다 (CLAUDE.md 규칙 11).
 """

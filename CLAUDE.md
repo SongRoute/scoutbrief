@@ -53,3 +53,4 @@ python run_demo.py --linear         # E2E 선형 관통
 python run_demo.py --poison <섹션>  # 오염→재생성 루프 데모
 python run_demo.py --deploy-without-token   # LLM08 차단 재현
 python run_demo.py --approve        # HITL 승인→배포
+python run_demo.py --reject         # HITL 반려(토큰 미발급) — 그래프 잔류, 배포 없음

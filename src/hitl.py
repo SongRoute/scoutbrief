@@ -2,7 +2,7 @@
 hitl.py — S6 HITL/LLM08 (SESSIONS.md B레인 온보딩 ④).
 interrupt 페이로드 빌더 / HMAC 승인 토큰 발급·검증 / render_deploy 게이트.
 
-LLM08 (CONTRACT §6:171): issue_approval_token은 그래프 외부(콘솔)에서만 호출한다.
+LLM08 (CONTRACT §6): issue_approval_token은 그래프 외부(콘솔)에서만 호출한다.
 그래프 노드(hitl_gate/render_deploy)는 토큰을 '검증'만 한다 — 발급 호출이
 노드·배선 소스에 나타나면 test_hitl의 정적 검사가 실패한다.
 
@@ -114,7 +114,7 @@ def verify_approval_token(token: str, report_md: str, secret: str | None = None)
 
 def hitl_gate(state) -> dict:
     """HITL 관문 노드: interrupt로 분석관 페이로드를 내보내고, 재개 값(토큰)을
-    검증해 approved에 기록한다 (CONTRACT §2:53 — approved는 이 노드만 쓴다).
+    검증해 approved에 기록한다 (CONTRACT §2 — approved는 이 노드만 쓴다).
     무효·부재 토큰이어도 여기서는 죽지 않는다 — 차단은 render_deploy 몫."""
     token = interrupt(build_interrupt_payload(state))
     report_md = deploy_markdown(state["tool_results"], state["draft"])
@@ -123,7 +123,7 @@ def hitl_gate(state) -> dict:
 
 def render_deploy(state) -> dict:
     """deploy 게이트 + 배포. 미승인이면 PermissionError (CONTRACT §6 LLM08 문면).
-    S7: guard_output 멱등 이중방어 (CONTRACT §6:170 '제거 금지') — 정상 경로에서는
+    S7: guard_output 멱등 이중방어 (CONTRACT §6 '제거 금지') — 정상 경로에서는
     label_pass가 이미 마스킹한 draft라 no-op이고, 따라서 승인 해시
     (approve-what-you-see)도 깨지지 않는다. label_pass를 우회한 오염 draft가
     직접 들어와도 배포본은 마스킹된다."""

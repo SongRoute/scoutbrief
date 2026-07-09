@@ -2,10 +2,10 @@
 # parse_request → fetch_data → synthesize → verify → route_after_verify
 #   → regenerate(→synthesize) | escalate | done.
 # 라우팅·escalate·피드백 빌더는 B레인 소유(src/nodes_b.py) — 여기서는 import만.
-# S6 (with_hitl=True): done/escalate → label_pass → hitl_gate → render_deploy —
+# S6 (with_hitl=True): done/escalate → hitl_gate → render_deploy —
 # hitl 노드는 B레인 소유(src/hitl.py), 여기서는 배선만.
 # S7: parse_request에 guards.guard_input(LLM01), label_pass 노드 신설(LLM06 —
-# 분석관이 마스킹된 최종본을 승인하도록 hitl_gate 앞에 배치, CONTRACT §6:169).
+# 분석관이 마스킹된 최종본을 승인하도록 hitl_gate 앞에 배치, CONTRACT §6).
 #
 # B 모듈은 시그니처만 배선 (판정 로직·층1 패턴 수정 금지):
 #   verifier.verify_report(draft: dict, tool_results: dict) -> verify_report
@@ -135,7 +135,9 @@ SECTION_SPECS = {
             "- 표 컬럼: 순위 / 투수(투구손, lefty_flag가 1이면 '(좌)' 표기) / "
             "만날 확률 근거(rest_days·appearances_7d·pitches_7d·last_game 사실) / "
             "vsL 주무기(vsL_top2_usage) / vsL xwOBA(null이면 '표본 부족') / "
-            "개인 전적(bvp_xwoba — null이면 '-', bvp_pa를 PA로 병기).\n"
+            "개인 전적 — bvp_pa와 bvp_xwoba를 둘 다 표기한다. bvp_pa는 값이 얼마든 "
+            "항상 PA 단위로 표기(실측값이므로 생략·'-' 대체 금지), bvp_xwoba는 "
+            "값 그대로 병기하되 null일 때만 xwOBA 자리에 '-'를 쓴다.\n"
             "- 표 상단에 소표본 안내를 한 번만: vsL_low_n이 1인 투수는 시즌 vsL 표본 부족으로 "
             "xwOBA 해석에 주의. vsL_low_n은 필드 값 그대로 쓰고 재계산하지 않는다.\n"
             "- 표 아래에 상위 위협 투수별 대응 전략을 서술 — 전략 문장은 전부 추정이므로 ⚑. "
@@ -159,7 +161,7 @@ assert set(SECTION_SPECS) == set(config.SECTION_KEYS), "R3: 섹션 키는 SECTIO
 def parse_request(state: BriefState) -> dict:
     """규칙 기반 파싱 — MVP: config 상수 적재.
     S7: guards.guard_input(LLM01) — 인젝션이면 ValueError, 통과 시 원문이
-    상태에 남는다 (§2:43 'LLM01 필터 통과 원문')."""
+    상태에 남는다 (§2 'LLM01 필터 통과 원문')."""
     if not state["request"].strip():
         raise ValueError("빈 request")
     request = guards.guard_input(state["request"])
@@ -228,7 +230,7 @@ def synthesize(state: BriefState) -> dict:
 
 def label_pass(state: BriefState) -> dict:
     """S7 (A레인): draft 전 섹션에 guards.guard_output(LLM06) 적용 — 분석관은
-    마스킹된 최종본을 승인한다 (CONTRACT §6:169, hitl_gate보다 앞).
+    마스킹된 최종본을 승인한다 (CONTRACT §6, hitl_gate보다 앞).
     R1 (CLAUDE.md:18): 검증 리포트(감사 로그)를 읽지 않는다 — 이 노드는 실패
     신호조차 필요 없다 (escalate 플레이스홀더도 여느 문장처럼 통과할 뿐).
     test_guards의 정적 검사가 이 함수 소스에 해당 상태 키가 없음을 보증한다."""
@@ -289,7 +291,7 @@ def build_graph(poison_node=None, with_hitl=False):
     # escalated_sections는 페이로드로 노출되고 (R1: verify_report는 미열람),
     # 승인 여부 판단은 사람 몫.
     # S7: 두 경로 모두 label_pass(LLM06 마스킹)를 먼저 통과 — 분석관이 보는
-    # 배포 후보가 곧 마스킹된 최종본이다 (§6:169). with_hitl=False 경로에는
+    # 배포 후보가 곧 마스킹된 최종본이다 (§6). with_hitl=False 경로에는
     # 삽입하지 않는다 (--linear/--poison 회귀 방지).
     g.add_node("label_pass", label_pass)
     g.add_node("hitl_gate", hitl.hitl_gate)
