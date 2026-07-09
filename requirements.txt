@@ -1,0 +1,5 @@
+pybaseball==2.2.7
+langgraph
+mcp
+langchain-mcp-adapters
+pytest
