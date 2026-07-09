@@ -3,3 +3,5 @@ langgraph
 mcp
 langchain-mcp-adapters
 pytest
+openai
+python-dotenv
