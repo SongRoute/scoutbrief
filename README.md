@@ -20,7 +20,7 @@ Statcast (빌드 시 1회) → build_cache.py → cache/*.csv (읽기 전용)
 | 승인 토큰은 그래프 밖 콘솔이 발급 | 파이프라인이 스스로 배포를 승인할 수 없게 함 (LLM08) |
 | 실패 섹션만 재생성 | 통과한 섹션은 보존해 재시도 비용과 흔들림을 줄임 |
 
-기술: Python · LangGraph 1.2.8 · MCP · OpenAI · pybaseball 2.2.7 · pytest (54 tests)
+기술: Python · LangGraph 1.2.8 · MCP · OpenAI · pybaseball 2.2.7 · pytest(테스트 54개)
 
 ## 무엇을 배웠나
 
